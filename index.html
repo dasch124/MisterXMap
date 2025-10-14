@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Wien 10. Bezirk – 100m Raster</title>
+  <title>Wien 10. Bezirk – 100m Raster, 2km südlich verschoben</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
@@ -33,7 +33,7 @@
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
-    const map = L.map('map').setView([48.21,16.395], 17); // Fokus 10. Bezirk
+    const map = L.map('map').setView([48.21 - 0.01802,16.395], 17); // Mittelpunkt 10. Bezirk verschoben
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution:'© OpenStreetMap contributors'
@@ -41,18 +41,26 @@
 
     const quadrantDisplay = document.getElementById('quadrant-display');
 
-    // Overlay-Bild
-    const imageUrl = 'overlay.png'; // optional
-    const imageBounds = [[48.192,16.375],[48.225,16.420]];
-    L.imageOverlay(imageUrl,imageBounds).addTo(map);
+    // Overlay-Bild (optional)
+    const imageUrl = 'overlay.png';
+    const originalBounds = [[48.192,16.375],[48.225,16.420]];
+
+    // 2 km nach Süden verschoben
+    const deltaLat = 0.01802;
+    const shiftedBounds = [
+      [originalBounds[0][0] - deltaLat, originalBounds[0][1]],
+      [originalBounds[1][0] - deltaLat, originalBounds[1][1]]
+    ];
+
+    L.imageOverlay(imageUrl, shiftedBounds).addTo(map);
 
     // 100m x 100m in Grad
     const metersToDegLat = 100/111000; // ~0.0009009
-    const centerLat = (imageBounds[0][0]+imageBounds[1][0])/2;
+    const centerLat = (shiftedBounds[0][0]+shiftedBounds[1][0])/2;
     const metersToDegLng = metersToDegLat / Math.cos(centerLat*Math.PI/180); // ~0.00137
 
-    const minLat = imageBounds[0][0], maxLat = imageBounds[1][0];
-    const minLng = imageBounds[0][1], maxLng = imageBounds[1][1];
+    const minLat = shiftedBounds[0][0], maxLat = shiftedBounds[1][0];
+    const minLng = shiftedBounds[0][1], maxLng = shiftedBounds[1][1];
 
     const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     const gridLayer = L.layerGroup().addTo(map);
@@ -79,12 +87,12 @@
       row++;
     }
 
-    // Labels (nur bei sehr starkem Zoom)
+    // Labels (bei starkem Zoom)
     function updateLabels(){
       const zoom = map.getZoom();
       gridCells.forEach(cell=>{
         if(cell.marker) gridLayer.removeLayer(cell.marker);
-        if(zoom>=19){ // klein, da Raster sehr dicht
+        if(zoom>=19){
           const centerLat=(cell.latMin+cell.latMax)/2;
           const centerLng=(cell.lngMin+cell.lngMax)/2;
           cell.marker=L.marker([centerLat,centerLng],{
@@ -140,10 +148,10 @@
           }
         }, err=>{
           console.log("GPS nicht verfügbar, Testkoordinaten werden verwendet");
-          highlightQuadrant({lat:48.21,lng:16.395});
+          highlightQuadrant({lat:48.21 - deltaLat, lng:16.395});
         }, {enableHighAccuracy:true, maximumAge:1000, timeout:5000});
       } else {
-        highlightQuadrant({lat:48.21,lng:16.395});
+        highlightQuadrant({lat:48.21 - deltaLat, lng:16.395});
       }
     }
 
