@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Wien 10. Bezirk – 100m Raster</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    body { margin:0; padding:0; }
+    #map { height:100vh; width:100%; }
+    #quadrant-display {
+      position:absolute;
+      top:10px;
+      left:50%;
+      transform:translateX(-50%);
+      background: rgba(255,255,255,0.9);
+      padding:10px 20px;
+      font-size:24px;
+      font-weight:bold;
+      border-radius:6px;
+      z-index:1000;
+    }
+    .grid-label {
+      font-weight:bold;
+      color:red;
+      text-shadow:1px 1px 2px white;
+    }
+  </style>
+</head>
+<body>
+  <div id="quadrant-display">Quadrant: ?</div>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([48.21,16.395], 17); // Fokus 10. Bezirk
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution:'© OpenStreetMap contributors'
+    }).addTo(map);
+
+    const quadrantDisplay = document.getElementById('quadrant-display');
+
+    // Overlay-Bild
+    const imageUrl = 'overlay.png'; // optional
+    const imageBounds = [[48.192,16.375],[48.225,16.420]];
+    L.imageOverlay(imageUrl,imageBounds).addTo(map);
+
+    // 100m x 100m in Grad
+    const metersToDegLat = 100/111000; // ~0.0009009
+    const centerLat = (imageBounds[0][0]+imageBounds[1][0])/2;
+    const metersToDegLng = metersToDegLat / Math.cos(centerLat*Math.PI/180); // ~0.00137
+
+    const minLat = imageBounds[0][0], maxLat = imageBounds[1][0];
+    const minLng = imageBounds[0][1], maxLng = imageBounds[1][1];
+
+    const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const gridLayer = L.layerGroup().addTo(map);
+    let gridCells = [];
+    let highlightedCell = null;
+
+    // Raster erzeugen
+    let row=0;
+    for(let lat=minLat; lat<maxLat; lat+=metersToDegLat){
+      let col=0;
+      for(let lng=minLng; lng<maxLng; lng+=metersToDegLng){
+        const rect=L.rectangle([[lat,lng],[lat+metersToDegLat,lng+metersToDegLng]],{
+          color:'red', weight:1, fillOpacity:0
+        }).addTo(gridLayer);
+
+        const label = letters[row%letters.length]+(col+1);
+        gridCells.push({
+          latMin:lat, latMax:lat+metersToDegLat,
+          lngMin:lng, lngMax:lng+metersToDegLng,
+          label:label, marker:null, rect:rect, highlight:null
+        });
+        col++;
+      }
+      row++;
+    }
+
+    // Labels (nur bei sehr starkem Zoom)
+    function updateLabels(){
+      const zoom = map.getZoom();
+      gridCells.forEach(cell=>{
+        if(cell.marker) gridLayer.removeLayer(cell.marker);
+        if(zoom>=19){ // klein, da Raster sehr dicht
+          const centerLat=(cell.latMin+cell.latMax)/2;
+          const centerLng=(cell.lngMin+cell.lngMax)/2;
+          cell.marker=L.marker([centerLat,centerLng],{
+            icon:L.divIcon({
+              className:'grid-label',
+              html:`<span style="font-size:8px">${cell.label}</span>`,
+              iconSize:[15,15], iconAnchor:[7,7]
+            })
+          }).addTo(gridLayer);
+        }
+      });
+    }
+    updateLabels();
+    map.on('zoomend', updateLabels);
+
+    // Quadrant-Ermittlung & Highlight
+    function getQuadrant(latlng){
+      return gridCells.find(c=>latlng.lat>=c.latMin && latlng.lat<c.latMax &&
+                                 latlng.lng>=c.lngMin && latlng.lng<c.lngMax);
+    }
+
+    function highlightQuadrant(latlng){
+      const cell = getQuadrant(latlng);
+      quadrantDisplay.textContent = cell ? "Quadrant: "+cell.label : "Quadrant: außerhalb";
+
+      if(highlightedCell && highlightedCell.highlight){
+        gridLayer.removeLayer(highlightedCell.highlight);
+        highlightedCell.highlight=null;
+      }
+
+      if(cell){
+        cell.highlight=L.rectangle([[cell.latMin,cell.lngMin],[cell.latMax,cell.lngMax]],{
+          color:'yellow', weight:0, fillOpacity:0.3
+        }).addTo(gridLayer);
+        highlightedCell = cell;
+      }
+    }
+
+    // GPS oder Testmodus
+    function startTracking(){
+      if(navigator.geolocation){
+        navigator.geolocation.watchPosition(position=>{
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          highlightQuadrant({lat:lat,lng:lng});
+
+          if(!window.userMarker){
+            window.userMarker=L.marker([lat,lng]).addTo(map);
+            window.userCircle=L.circle([lat,lng],{radius:position.coords.accuracy}).addTo(map);
+          } else {
+            window.userMarker.setLatLng([lat,lng]);
+            window.userCircle.setLatLng([lat,lng]).setRadius(position.coords.accuracy);
+          }
+        }, err=>{
+          console.log("GPS nicht verfügbar, Testkoordinaten werden verwendet");
+          highlightQuadrant({lat:48.21,lng:16.395});
+        }, {enableHighAccuracy:true, maximumAge:1000, timeout:5000});
+      } else {
+        highlightQuadrant({lat:48.21,lng:16.395});
+      }
+    }
+
+    startTracking();
+
+  </script>
+</body>
+</html>
