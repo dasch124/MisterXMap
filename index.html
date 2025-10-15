@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Wien 10. Bezirk – 100m Raster, 2km südlich verschoben</title>
+  <title>Wien Quadrant 100 m (2 km südlich, Label sichtbar)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
@@ -13,17 +13,22 @@
       top:10px;
       left:50%;
       transform:translateX(-50%);
-      background: rgba(255,255,255,0.9);
+      background:rgba(255,255,255,0.9);
       padding:10px 20px;
-      font-size:24px;
+      font-size:22px;
       font-weight:bold;
-      border-radius:6px;
+      border-radius:10px;
       z-index:1000;
+      box-shadow:0 2px 5px rgba(0,0,0,0.3);
     }
-    .grid-label {
+    .quadrant-label {
       font-weight:bold;
-      color:red;
-      text-shadow:1px 1px 2px white;
+      color:#222;
+      background:rgba(255,255,0,0.8);
+      border-radius:6px;
+      padding:2px 6px;
+      font-size:16px;
+      text-align:center;
     }
   </style>
 </head>
@@ -33,130 +38,89 @@
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
-    const map = L.map('map').setView([48.21 - 0.01802,16.395], 17); // Mittelpunkt 10. Bezirk verschoben
-
+    const map = L.map('map').setView([48.192,16.395], 17); // ca. 2 km südlich von Wien 10
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution:'© OpenStreetMap contributors'
     }).addTo(map);
 
     const quadrantDisplay = document.getElementById('quadrant-display');
 
-    // Overlay-Bild (optional)
-    const imageUrl = 'overlay.png';
-    const originalBounds = [[48.192,16.375],[48.225,16.420]];
-
-    // 2 km nach Süden verschoben
-    const deltaLat = 0.01802;
-    const shiftedBounds = [
-      [originalBounds[0][0] - deltaLat, originalBounds[0][1]],
-      [originalBounds[1][0] - deltaLat, originalBounds[1][1]]
-    ];
-
-    L.imageOverlay(imageUrl, shiftedBounds).addTo(map);
-
-    // 100m x 100m in Grad
-    const metersToDegLat = 100/111000; // ~0.0009009
-    const centerLat = (shiftedBounds[0][0]+shiftedBounds[1][0])/2;
-    const metersToDegLng = metersToDegLat / Math.cos(centerLat*Math.PI/180); // ~0.00137
-
-    const minLat = shiftedBounds[0][0], maxLat = shiftedBounds[1][0];
-    const minLng = shiftedBounds[0][1], maxLng = shiftedBounds[1][1];
+    // Rasterparameter
+    const deltaLat = 0.01802; // 2 km südlich
+    const baseLat = 48.192 - deltaLat;
+    const baseLng = 16.375;
+    const metersToDegLat = 100 / 111000;  // 100 m
+    const metersToDegLng = metersToDegLat / Math.cos(48.2 * Math.PI / 180);
 
     const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    const gridLayer = L.layerGroup().addTo(map);
-    let gridCells = [];
-    let highlightedCell = null;
+    let highlightedRect = null;
+    let labelMarker = null;
 
-    // Raster erzeugen
-    let row=0;
-    for(let lat=minLat; lat<maxLat; lat+=metersToDegLat){
-      let col=0;
-      for(let lng=minLng; lng<maxLng; lng+=metersToDegLng){
-        const rect=L.rectangle([[lat,lng],[lat+metersToDegLat,lng+metersToDegLng]],{
-          color:'red', weight:1, fillOpacity:0
-        }).addTo(gridLayer);
-
-        const label = letters[row%letters.length]+(col+1);
-        gridCells.push({
-          latMin:lat, latMax:lat+metersToDegLat,
-          lngMin:lng, lngMax:lng+metersToDegLng,
-          label:label, marker:null, rect:rect, highlight:null
-        });
-        col++;
-      }
-      row++;
+    function getQuadrant(lat, lng) {
+      const row = Math.floor((lat - baseLat) / metersToDegLat);
+      const col = Math.floor((lng - baseLng) / metersToDegLng);
+      if (row < 0 || col < 0) return null;
+      const latMin = baseLat + row * metersToDegLat;
+      const lngMin = baseLng + col * metersToDegLng;
+      const label = letters[row % letters.length] + (col + 1);
+      return {latMin, latMax: latMin + metersToDegLat, lngMin, lngMax: lngMin + metersToDegLng, label};
     }
 
-    // Labels (bei starkem Zoom)
-    function updateLabels(){
-      const zoom = map.getZoom();
-      gridCells.forEach(cell=>{
-        if(cell.marker) gridLayer.removeLayer(cell.marker);
-        if(zoom>=19){
-          const centerLat=(cell.latMin+cell.latMax)/2;
-          const centerLng=(cell.lngMin+cell.lngMax)/2;
-          cell.marker=L.marker([centerLat,centerLng],{
-            icon:L.divIcon({
-              className:'grid-label',
-              html:`<span style="font-size:8px">${cell.label}</span>`,
-              iconSize:[15,15], iconAnchor:[7,7]
-            })
-          }).addTo(gridLayer);
-        }
-      });
-    }
-    updateLabels();
-    map.on('zoomend', updateLabels);
-
-    // Quadrant-Ermittlung & Highlight
-    function getQuadrant(latlng){
-      return gridCells.find(c=>latlng.lat>=c.latMin && latlng.lat<c.latMax &&
-                                 latlng.lng>=c.lngMin && latlng.lng<c.lngMax);
-    }
-
-    function highlightQuadrant(latlng){
-      const cell = getQuadrant(latlng);
-      quadrantDisplay.textContent = cell ? "Quadrant: "+cell.label : "Quadrant: außerhalb";
-
-      if(highlightedCell && highlightedCell.highlight){
-        gridLayer.removeLayer(highlightedCell.highlight);
-        highlightedCell.highlight=null;
+    function highlightQuadrant(lat, lng) {
+      const q = getQuadrant(lat, lng);
+      if (!q) {
+        quadrantDisplay.textContent = "Quadrant: außerhalb";
+        if (highlightedRect) { map.removeLayer(highlightedRect); highlightedRect=null; }
+        if (labelMarker) { map.removeLayer(labelMarker); labelMarker=null; }
+        return;
       }
 
-      if(cell){
-        cell.highlight=L.rectangle([[cell.latMin,cell.lngMin],[cell.latMax,cell.lngMax]],{
-          color:'yellow', weight:0, fillOpacity:0.3
-        }).addTo(gridLayer);
-        highlightedCell = cell;
-      }
+      quadrantDisplay.textContent = "Quadrant: " + q.label;
+
+      if (highlightedRect) map.removeLayer(highlightedRect);
+      highlightedRect = L.rectangle([[q.latMin, q.lngMin], [q.latMax, q.lngMax]], {
+        color:'yellow', weight:2, fillOpacity:0.25
+      }).addTo(map);
+
+      const centerLat = (q.latMin + q.latMax)/2;
+      const centerLng = (q.lngMin + q.lngMax)/2;
+
+      if (labelMarker) map.removeLayer(labelMarker);
+      labelMarker = L.marker([centerLat, centerLng], {
+        icon: L.divIcon({
+          className:'quadrant-label',
+          html:q.label,
+          iconSize:[40,20],
+          iconAnchor:[20,10]
+        })
+      }).addTo(map);
     }
 
-    // GPS oder Testmodus
-    function startTracking(){
-      if(navigator.geolocation){
-        navigator.geolocation.watchPosition(position=>{
-          const lat = position.coords.latitude;
-          const lng = position.coords.longitude;
-          highlightQuadrant({lat:lat,lng:lng});
+    // GPS-Tracking
+    function startTracking() {
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(pos => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          highlightQuadrant(lat, lng);
 
-          if(!window.userMarker){
-            window.userMarker=L.marker([lat,lng]).addTo(map);
-            window.userCircle=L.circle([lat,lng],{radius:position.coords.accuracy}).addTo(map);
+          if (!window.userMarker) {
+            window.userMarker = L.marker([lat, lng]).addTo(map);
+            window.userCircle = L.circle([lat, lng], {radius:pos.coords.accuracy}).addTo(map);
           } else {
-            window.userMarker.setLatLng([lat,lng]);
-            window.userCircle.setLatLng([lat,lng]).setRadius(position.coords.accuracy);
+            window.userMarker.setLatLng([lat, lng]);
+            window.userCircle.setLatLng([lat, lng]).setRadius(pos.coords.accuracy);
           }
-        }, err=>{
-          console.log("GPS nicht verfügbar, Testkoordinaten werden verwendet");
-          highlightQuadrant({lat:48.21 - deltaLat, lng:16.395});
+        }, err => {
+          console.warn("GPS nicht verfügbar → Testkoordinaten");
+          highlightQuadrant(48.192,16.395);
         }, {enableHighAccuracy:true, maximumAge:1000, timeout:5000});
       } else {
-        highlightQuadrant({lat:48.21 - deltaLat, lng:16.395});
+        highlightQuadrant(48.192,16.395);
       }
     }
 
     startTracking();
-
   </script>
 </body>
 </html>
